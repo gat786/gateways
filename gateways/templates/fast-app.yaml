@@ -1,0 +1,90 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fastapi-app
+  namespace: {{ .Release.Namespace }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fastapi-app
+  template:
+    metadata:
+      labels:
+        app: fastapi-app
+    spec:
+      containers:
+      - name: fastapi-app
+        image: gat786/k8s-fastapi-sample:latest
+        ports:
+          - containerPort: 8000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: fastapi-app-service
+  namespace: {{ .Release.Namespace }}
+spec:
+  selector:
+    app: fastapi-app
+  ports:
+  - port: 8000
+    targetPort: 8000
+---
+kind: Gateway
+apiVersion: gateway.networking.k8s.io/v1beta1
+metadata:
+  name: external-http
+  namespace: {{ .Release.Namespace }}
+spec:
+  gatewayClassName: gke-l7-gxlb
+  listeners:
+  - name: http
+    protocol: HTTP
+    port: 80
+    allowedRoutes:
+      namespaces:
+        from: All
+
+---
+kind: HTTPRoute
+apiVersion: gateway.networking.k8s.io/v1beta1
+metadata:
+  name: fastapi
+  namespace: {{ .Release.Namespace }}
+spec:
+  parentRefs:
+  - kind: Gateway
+    name: internal-http
+  - kind: Gateway
+    name: external-http
+  hostnames:
+  - "fastapi.example.com"
+  rules:
+  - backendRefs:
+    - name: fastapi-app-service
+      port: 8000
+---
+apiVersion: networking.gke.io/v1
+kind: HealthCheckPolicy
+metadata:
+  name: fastapi-app-health-check
+  namespace: {{ .Release.Namespace }}
+spec:
+  default:
+    checkIntervalSec: 30
+    timeoutSec: 5
+    healthyThreshold: 1
+    unhealthyThreshold: 2
+    logConfig:
+      enabled: true
+    config:
+      type: HTTP
+      httpHealthCheck:
+        port: 8000
+        portSpecification: USE_FIXED_PORT
+        requestPath: /heartbeat
+  targetRef:
+    group: ""
+    kind: Service
+    name: fastapi-app-service
